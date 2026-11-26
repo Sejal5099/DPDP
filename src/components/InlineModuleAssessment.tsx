@@ -80,7 +80,7 @@ export function InlineModuleAssessment({
     <section
       id="module-assessment"
       aria-labelledby={`m${moduleId}-assessment-heading`}
-      className="pt-8 mt-8 border-t border-slate-700/80 space-y-6"
+      className="space-y-6"
     >
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700/80 pb-5">

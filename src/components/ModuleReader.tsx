@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -47,28 +47,45 @@ export function ModuleReader({
 }: ModuleReaderProps) {
   const mod = getModuleById(moduleId);
   const [activeTab, setActiveTab] = useState<ModuleTab>('units');
-  const [selectedUnitIndex, setSelectedUnitIndex] = useState<number>(
+  const [expandedUnitIndex, setExpandedUnitIndex] = useState<number | null>(
     () => progress.lastUnitByModule[moduleId] ?? 0
   );
+  const [isAssessmentOpen, setIsAssessmentOpen] = useState<boolean>(false);
   const [revealedCaseIds, setRevealedCaseIds] = useState<Record<string, boolean>>({});
+  const unitRowRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const assessmentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setActiveTab('units');
+    setIsAssessmentOpen(false);
   }, [moduleId]);
 
   useEffect(() => {
     const savedIdx = progress.lastUnitByModule[moduleId] ?? 0;
     const bounded = Math.min(Math.max(0, savedIdx), mod.units.length - 1);
-    setSelectedUnitIndex(bounded);
+    setExpandedUnitIndex(bounded);
   }, [moduleId, mod.units.length, progress.lastUnitByModule]);
 
-  const selectUnit = (idx: number) => {
-    setSelectedUnitIndex(idx);
+  const openUnitAt = (idx: number) => {
+    setExpandedUnitIndex(idx);
+    setIsAssessmentOpen(false);
     onSelectUnit(moduleId, idx);
+    window.setTimeout(() => {
+      unitRowRefs.current[idx]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    }, 40);
   };
 
-  const activeUnit = mod.units[selectedUnitIndex] ?? mod.units[0];
-  const isUnitCompleted = progress.completedUnitIds.includes(activeUnit.id);
+  const toggleUnitAccordion = (idx: number) => {
+    if (expandedUnitIndex === idx) {
+      setExpandedUnitIndex(null);
+    } else {
+      openUnitAt(idx);
+    }
+  };
+
   const modCompletedCount = mod.units.filter((u) =>
     progress.completedUnitIds.includes(u.id)
   ).length;
@@ -80,11 +97,10 @@ export function ModuleReader({
 
   const jumpToEndAssessment = () => {
     setActiveTab('units');
-    selectUnit(mod.units.length - 1);
+    setExpandedUnitIndex(null);
+    setIsAssessmentOpen(true);
     window.setTimeout(() => {
-      document
-        .getElementById('module-assessment')
-        ?.scrollIntoView({ behavior: 'smooth' });
+      assessmentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 60);
   };
 
@@ -201,352 +217,409 @@ export function ModuleReader({
         </div>
       </div>
 
-      {/* TAB 1: Study Units Two-Zone Stage */}
+      {/* TAB 1: Accordion Study Units — Stacked Rows with Dropdown Arrows */}
       {activeTab === 'units' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left Navigator — Consistent Deep Aqua-Navy Sidebar */}
-          <aside className="lg:col-span-4 bg-[#081722] border border-cyan-800/70 shadow-lg shadow-black/20 dark:shadow-black/35 rounded-sm overflow-hidden">
-            <div className="px-4 py-3.5 border-b border-cyan-900/70 bg-[#051018] space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-semibold uppercase tracking-wider text-cyan-300">
-                  Module {mod.id} Syllabus
-                </span>
-                <span className="font-mono text-xs text-white font-semibold tabular-nums">
-                  {modCompletedCount}/{mod.units.length} ({modPct}%)
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-slate-800 rounded-sm overflow-hidden">
+        <div className="space-y-3">
+          {/* Module Syllabus Progress Header */}
+          <div className="bg-[#051018] border border-cyan-800/70 rounded-sm px-4 sm:px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-mono text-xs font-semibold uppercase tracking-wider text-cyan-300">
+                Module {mod.id} Syllabus
+              </span>
+              <span className="text-xs text-slate-300">
+                Click any session row to expand its details
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-xs text-white font-semibold tabular-nums">
+                {modCompletedCount}/{mod.units.length} ({modPct}%)
+              </span>
+              <div className="w-28 sm:w-44 h-1.5 bg-slate-800 rounded-sm overflow-hidden">
                 <div
                   className={`h-full transition-all duration-300 ${
-                    modPct === 100
-                      ? 'bg-emerald-400'
-                      : 'bg-cyan-400'
+                    modPct === 100 ? 'bg-emerald-400' : 'bg-cyan-400'
                   }`}
                   style={{ width: `${modPct}%` }}
                 />
               </div>
             </div>
-            <div className="divide-y divide-slate-800/90 max-h-[620px] overflow-y-auto">
-              {mod.units.map((unit, idx) => {
-                const done = progress.completedUnitIds.includes(unit.id);
-                const selected = idx === selectedUnitIndex;
-                return (
+          </div>
+
+          {/* Session Dropdown Rows — One Below the Other */}
+          <div className="space-y-2.5">
+            {mod.units.map((unit, idx) => {
+              const done = progress.completedUnitIds.includes(unit.id);
+              const isOpen = expandedUnitIndex === idx;
+
+              return (
+                <div
+                  key={unit.id}
+                  ref={(el) => {
+                    unitRowRefs.current[idx] = el;
+                  }}
+                  className={`rounded-sm border overflow-hidden transition-colors shadow-sm dark:shadow-black/25 ${
+                    isOpen
+                      ? 'border-cyan-400/80'
+                      : 'border-cyan-800/70'
+                  }`}
+                >
+                  {/* Accordion Header Row — Deep Aqua-Navy */}
                   <button
-                    key={unit.id}
                     type="button"
-                    onClick={() => selectUnit(idx)}
-                    className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors ${
-                      selected
+                    aria-expanded={isOpen}
+                    onClick={() => toggleUnitAccordion(idx)}
+                    className={`w-full text-left px-4 sm:px-5 py-3.5 flex items-center justify-between gap-4 transition-colors ${
+                      isOpen
                         ? 'bg-[#113C54]'
-                        : 'bg-transparent hover:bg-[#0D283A]'
+                        : 'bg-[#081722] hover:bg-[#0D283A]'
                     }`}
                   >
-                    <span className="mt-0.5 shrink-0">
-                      {done ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      ) : (
-                        <Circle
-                          className={`w-4 h-4 ${
-                            selected
-                              ? 'text-cyan-300'
-                              : 'text-slate-400/75'
-                          }`}
-                        />
-                      )}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-slate-300/85 tabular-nums">
-                        <span
-                          className={
-                            selected
-                              ? 'text-cyan-300 font-semibold'
-                              : 'text-cyan-200/85'
-                          }
-                        >
-                          {unit.code}
-                        </span>
-                        <span>{unit.durationMinutes} min</span>
-                      </div>
-                      <div
-                        className={`text-sm leading-snug mt-0.5 ${
-                          selected
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <span className="shrink-0">
+                        {done ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        ) : (
+                          <Circle
+                            className={`w-4 h-4 ${
+                              isOpen ? 'text-cyan-300' : 'text-slate-400/75'
+                            }`}
+                          />
+                        )}
+                      </span>
+
+                      <span
+                        className={`font-mono text-xs shrink-0 tabular-nums ${
+                          isOpen
+                            ? 'text-cyan-300 font-semibold'
+                            : 'text-cyan-200/85'
+                        }`}
+                      >
+                        {unit.code}
+                      </span>
+
+                      <span
+                        className={`text-sm sm:text-[15px] truncate ${
+                          isOpen
                             ? 'font-semibold text-white'
                             : 'font-medium text-slate-100'
                         }`}
                       >
                         {unit.title}
-                      </div>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="hidden md:inline-flex">
+                        <StatusTag status={unit.status} compact onDarkSurface />
+                      </span>
+                      <span className="font-mono text-xs text-slate-300 tabular-nums">
+                        {unit.durationMinutes} min
+                      </span>
+                      <span className="p-1 rounded-sm bg-[#051018]/60 border border-cyan-800/60 text-cyan-300">
+                        {isOpen ? (
+                          <ChevronUp className="w-4 h-4" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4" />
+                        )}
+                      </span>
                     </div>
                   </button>
-                );
-              })}
 
-              {/* Assessment entry immediately following the last session in syllabus */}
-              <button
-                type="button"
-                onClick={jumpToEndAssessment}
-                className="w-full text-left px-4 py-3 flex items-start gap-3 transition-colors border-t border-cyan-900/70 bg-[#051018]/90 hover:bg-[#0D283A]"
-              >
-                <span className="mt-0.5 shrink-0">
-                  <ShieldCheck className="w-4 h-4 text-cyan-300" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="font-mono text-[11px] text-cyan-300 font-semibold uppercase tracking-wider">
-                    End-of-Module Assessment
-                  </div>
-                  <div className="text-xs text-slate-300 mt-0.5">
-                    Included immediately after {mod.units[mod.units.length - 1]?.code}
-                  </div>
-                </div>
-              </button>
-            </div>
-          </aside>
+                  {/* Dropdown Content Body — Elevated Steel-Slate Surface */}
+                  {isOpen && (
+                    <div className="bg-[#243044] border-t border-cyan-800/70 p-6 sm:p-8 space-y-6">
+                      <div className="space-y-3 border-b border-slate-700/80 pb-5">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs text-slate-300 tabular-nums">
+                            <span className="font-semibold text-cyan-300 uppercase">
+                              {unit.code}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span>{unit.durationMinutes} minutes</span>
+                            <span aria-hidden="true">·</span>
+                            <StatusTag status={unit.status} onDarkSurface />
+                          </div>
 
-          {/* Right Unit Reading Stage — Consistent Elevated Steel-Slate Surface */}
-          <main className="lg:col-span-8 bg-[#243044] border border-slate-600/80 shadow-lg shadow-black/15 dark:shadow-black/25 rounded-sm p-6 sm:p-8 space-y-6">
-            <div className="space-y-3 border-b border-slate-700/80 pb-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs text-slate-300 tabular-nums">
-                  <span className="font-semibold text-cyan-300 uppercase">
-                    {activeUnit.code}
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span>{activeUnit.durationMinutes} minutes</span>
-                  <span aria-hidden="true">·</span>
-                  <StatusTag status={activeUnit.status} onDarkSurface />
-                </div>
+                          <button
+                            type="button"
+                            onClick={() => onToggleUnitComplete(unit.id)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-sm border transition-colors ${
+                              done
+                                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700'
+                                : 'bg-[#182233] text-slate-100 border-slate-500 hover:border-slate-400'
+                            }`}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>{done ? 'Completed' : 'Mark Complete'}</span>
+                          </button>
+                        </div>
 
-                <button
-                  type="button"
-                  onClick={() => onToggleUnitComplete(activeUnit.id)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-sm border transition-colors ${
-                    isUnitCompleted
-                      ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700'
-                      : 'bg-[#182233] text-slate-100 border-slate-500 hover:border-slate-400'
-                  }`}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{isUnitCompleted ? 'Completed' : 'Mark Complete'}</span>
-                </button>
-              </div>
+                        <h2 className="font-display text-2xl font-semibold text-white leading-snug">
+                          {unit.title}
+                        </h2>
 
-              <h2 className="font-display text-2xl font-semibold text-white leading-snug">
-                {activeUnit.title}
-              </h2>
-
-              <div className="font-mono text-xs text-slate-300">
-                Citations: <span className="text-slate-100">{activeUnit.statutoryCitations.join(' · ')}</span>
-              </div>
-            </div>
-
-            {activeUnit.id === 'm1-s3' ? (
-              <DpdpDefinitionsDeck />
-            ) : (
-              <>
-                {/* Core Concept Summary */}
-                <div className="space-y-4">
-                  <p className="text-[15px] text-slate-100 leading-relaxed">
-                    {activeUnit.summary}
-                  </p>
-
-                  <div className="space-y-2">
-                    <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
-                      Key Statutory &amp; Operational Rules
-                    </h3>
-                    <ul className="space-y-2.5">
-                      {activeUnit.keyPoints.map((pt, i) => (
-                        <li
-                          key={i}
-                          className="flex items-start gap-2.5 text-sm text-slate-200 leading-relaxed"
-                        >
-                          <span className="font-mono text-xs text-cyan-300 font-semibold mt-0.5 tabular-nums">
-                            {String(i + 1).padStart(2, '0')}
+                        <div className="font-mono text-xs text-slate-300">
+                          Citations:{' '}
+                          <span className="text-slate-100">
+                            {unit.statutoryCitations.join(' · ')}
                           </span>
-                          <span>{pt}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
+                        </div>
+                      </div>
 
-                {/* BFSI Operational Application */}
-                <div className="bg-[#182233] border border-slate-600/70 rounded-sm p-4 space-y-1.5">
-                  <span className="font-mono text-[11px] uppercase tracking-wider font-semibold text-cyan-300 block">
-                    BFSI Operational Practice
-                  </span>
-                  <p className="text-sm text-slate-100 leading-relaxed">
-                    {activeUnit.bfsiApplication}
-                  </p>
-                </div>
+                      {unit.id === 'm1-s3' ? (
+                        <DpdpDefinitionsDeck />
+                      ) : (
+                        <>
+                          {/* Core Concept Summary */}
+                          <div className="space-y-4">
+                            <p className="text-[15px] text-slate-100 leading-relaxed">
+                              {unit.summary}
+                            </p>
 
-                {/* Comparison Table (if any) */}
-                {activeUnit.table && (
-                  <div className="space-y-2.5">
-                    <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
-                      {activeUnit.table.title}
-                    </h3>
-                    <div className="overflow-x-auto border border-slate-600/70 rounded-sm">
-                      <table className="w-full text-left border-collapse text-xs sm:text-sm">
-                        <thead>
-                          <tr className="bg-[#182233] border-b border-slate-600/70">
-                            {activeUnit.table.columns.map((col, idx) => (
-                              <th
-                                key={idx}
-                                className="px-3.5 py-2.5 font-semibold text-white"
-                              >
-                                {col}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-700/80 bg-[#243044]">
-                          {activeUnit.table.rows.map((row, rIdx) => (
-                            <tr key={rIdx} className="hover:bg-slate-700/35">
-                              {row.map((cell, cIdx) => (
-                                <td
-                                  key={cIdx}
-                                  className={`px-3.5 py-2.5 align-top leading-relaxed ${
-                                    cIdx === 0
-                                      ? 'font-medium text-white'
-                                      : 'text-slate-200'
-                                  }`}
-                                >
-                                  {cell}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* Role-Specific Takeaways */}
-                {activeUnit.roleNotes && (
-                  <div className="space-y-2.5 pt-2 border-t border-slate-700/80">
-                    <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
-                      Role Accountability Breakdown
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      {(
-                        [
-                          {
-                            key: 'frontline',
-                            label: 'Frontline Operations',
-                            icon: Users,
-                            text: activeUnit.roleNotes.frontline,
-                          },
-                          {
-                            key: 'it',
-                            label: 'IT & Cybersecurity',
-                            icon: Cpu,
-                            text: activeUnit.roleNotes.it,
-                          },
-                          {
-                            key: 'leadership',
-                            label: 'Leadership & Board',
-                            icon: Briefcase,
-                            text: activeUnit.roleNotes.leadership,
-                          },
-                        ] as const
-                      )
-                        .filter(
-                          (item) =>
-                            progress.selectedRole === 'all' ||
-                            progress.selectedRole === item.key
-                        )
-                        .map((item) => {
-                          const Icon = item.icon;
-                          const highlighted = progress.selectedRole === item.key;
-                          return (
-                            <div
-                              key={item.key}
-                              className={`p-3.5 rounded-sm border ${
-                                highlighted
-                                  ? 'border-cyan-400 bg-cyan-950/55'
-                                  : 'border-slate-600/70 bg-[#182233]'
-                              }`}
-                            >
-                              <div className="flex items-center gap-1.5 text-xs font-semibold text-white mb-1.5">
-                                <Icon className="w-3.5 h-3.5 text-cyan-300" />
-                                <span>{item.label}</span>
-                              </div>
-                              <p className="text-xs text-slate-200 leading-relaxed">
-                                {item.text}
-                              </p>
+                            <div className="space-y-2">
+                              <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
+                                Key Statutory &amp; Operational Rules
+                              </h3>
+                              <ul className="space-y-2.5">
+                                {unit.keyPoints.map((pt, i) => (
+                                  <li
+                                    key={i}
+                                    className="flex items-start gap-2.5 text-sm text-slate-200 leading-relaxed"
+                                  >
+                                    <span className="font-mono text-xs text-cyan-300 font-semibold mt-0.5 tabular-nums">
+                                      {String(i + 1).padStart(2, '0')}
+                                    </span>
+                                    <span>{pt}</span>
+                                  </li>
+                                ))}
+                              </ul>
                             </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
+                          </div>
 
-            {/* Unit Footer Navigation */}
-            <div className="flex items-center justify-between pt-5 border-t border-slate-700/80">
+                          {/* BFSI Operational Application */}
+                          <div className="bg-[#182233] border border-slate-600/70 rounded-sm p-4 space-y-1.5">
+                            <span className="font-mono text-[11px] uppercase tracking-wider font-semibold text-cyan-300 block">
+                              BFSI Operational Practice
+                            </span>
+                            <p className="text-sm text-slate-100 leading-relaxed">
+                              {unit.bfsiApplication}
+                            </p>
+                          </div>
+
+                          {/* Comparison Table (if any) */}
+                          {unit.table && (
+                            <div className="space-y-2.5">
+                              <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
+                                {unit.table.title}
+                              </h3>
+                              <div className="overflow-x-auto border border-slate-600/70 rounded-sm">
+                                <table className="w-full text-left border-collapse text-xs sm:text-sm">
+                                  <thead>
+                                    <tr className="bg-[#182233] border-b border-slate-600/70">
+                                      {unit.table.columns.map((col, cIdx) => (
+                                        <th
+                                          key={cIdx}
+                                          className="px-3.5 py-2.5 font-semibold text-white"
+                                        >
+                                          {col}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-700/80 bg-[#243044]">
+                                    {unit.table.rows.map((row, rIdx) => (
+                                      <tr
+                                        key={rIdx}
+                                        className="hover:bg-slate-700/35"
+                                      >
+                                        {row.map((cell, cIdx) => (
+                                          <td
+                                            key={cIdx}
+                                            className={`px-3.5 py-2.5 align-top leading-relaxed ${
+                                              cIdx === 0
+                                                ? 'font-medium text-white'
+                                                : 'text-slate-200'
+                                            }`}
+                                          >
+                                            {cell}
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Role-Specific Takeaways */}
+                          {unit.roleNotes && (
+                            <div className="space-y-2.5 pt-2 border-t border-slate-700/80">
+                              <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
+                                Role Accountability Breakdown
+                              </h3>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                {(
+                                  [
+                                    {
+                                      key: 'frontline',
+                                      label: 'Frontline Operations',
+                                      icon: Users,
+                                      text: unit.roleNotes.frontline,
+                                    },
+                                    {
+                                      key: 'it',
+                                      label: 'IT & Cybersecurity',
+                                      icon: Cpu,
+                                      text: unit.roleNotes.it,
+                                    },
+                                    {
+                                      key: 'leadership',
+                                      label: 'Leadership & Board',
+                                      icon: Briefcase,
+                                      text: unit.roleNotes.leadership,
+                                    },
+                                  ] as const
+                                )
+                                  .filter(
+                                    (item) =>
+                                      progress.selectedRole === 'all' ||
+                                      progress.selectedRole === item.key
+                                  )
+                                  .map((item) => {
+                                    const Icon = item.icon;
+                                    const highlighted =
+                                      progress.selectedRole === item.key;
+                                    return (
+                                      <div
+                                        key={item.key}
+                                        className={`p-3.5 rounded-sm border ${
+                                          highlighted
+                                            ? 'border-cyan-400 bg-cyan-950/55'
+                                            : 'border-slate-600/70 bg-[#182233]'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-1.5 text-xs font-semibold text-white mb-1.5">
+                                          <Icon className="w-3.5 h-3.5 text-cyan-300" />
+                                          <span>{item.label}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-200 leading-relaxed">
+                                          {item.text}
+                                        </p>
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {/* Unit Footer Navigation */}
+                      <div className="flex items-center justify-between pt-5 border-t border-slate-700/80">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => openUnitAt(Math.max(0, idx - 1))}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold border border-slate-500 bg-[#182233] rounded-sm text-slate-100 hover:bg-slate-700/70 disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                          <span>Previous Unit</span>
+                        </button>
+
+                        {idx < mod.units.length - 1 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!done) {
+                                onToggleUnitComplete(unit.id);
+                              }
+                              openUnitAt(Math.min(mod.units.length - 1, idx + 1));
+                            }}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-sm"
+                          >
+                            <span>Complete &amp; Next Unit</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!done) {
+                                onToggleUnitComplete(unit.id);
+                              }
+                              jumpToEndAssessment();
+                            }}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-sm"
+                          >
+                            <span>Complete &amp; Take Module {mod.id} Quiz</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* End-of-Module Assessment Accordion Row */}
+            <div
+              ref={assessmentRef}
+              className={`rounded-sm border overflow-hidden transition-colors shadow-sm dark:shadow-black/25 ${
+                isAssessmentOpen ? 'border-cyan-400/80' : 'border-cyan-800/70'
+              }`}
+            >
               <button
                 type="button"
-                disabled={selectedUnitIndex === 0}
-                onClick={() => selectUnit(Math.max(0, selectedUnitIndex - 1))}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold border border-slate-500 bg-[#182233] rounded-sm text-slate-100 hover:bg-slate-700/70 disabled:opacity-40 disabled:pointer-events-none"
+                aria-expanded={isAssessmentOpen}
+                onClick={() => setIsAssessmentOpen((prev) => !prev)}
+                className={`w-full text-left px-4 sm:px-5 py-3.5 flex items-center justify-between gap-4 transition-colors ${
+                  isAssessmentOpen
+                    ? 'bg-[#113C54]'
+                    : 'bg-[#051018] hover:bg-[#0D283A]'
+                }`}
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Previous Unit</span>
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <ShieldCheck className="w-4 h-4 text-cyan-300 shrink-0" />
+                  <span className="font-mono text-xs font-semibold uppercase tracking-wider text-cyan-300 shrink-0">
+                    End-of-Module Assessment
+                  </span>
+                  <span className="text-sm font-medium text-slate-200 truncate">
+                    Module {mod.id} Knowledge Check &amp; Verification
+                  </span>
+                </div>
+
+                <span className="p-1 rounded-sm bg-[#081722] border border-cyan-800/60 text-cyan-300 shrink-0">
+                  {isAssessmentOpen ? (
+                    <ChevronUp className="w-4 h-4" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4" />
+                  )}
+                </span>
               </button>
 
-              {selectedUnitIndex < mod.units.length - 1 ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isUnitCompleted) {
-                      onToggleUnitComplete(activeUnit.id);
+              {isAssessmentOpen && (
+                <div className="bg-[#243044] border-t border-cyan-800/70 p-6 sm:p-8">
+                  <InlineModuleAssessment
+                    moduleId={mod.id}
+                    modTitle={mod.title}
+                    completedCount={modCompletedCount}
+                    totalUnits={mod.units.length}
+                    progress={progress}
+                    onSaveQuizScore={onSaveQuizScore}
+                    onCompleteModuleUnits={() =>
+                      onCompleteModuleUnits(mod.units.map((u) => u.id))
                     }
-                    selectUnit(Math.min(mod.units.length - 1, selectedUnitIndex + 1));
-                  }}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-sm"
-                >
-                  <span>Complete &amp; Next Unit</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isUnitCompleted) {
-                      onToggleUnitComplete(activeUnit.id);
+                    onProceedNextModule={
+                      mod.id < 6 ? () => onSelectModule(mod.id + 1) : undefined
                     }
-                    document
-                      .getElementById('module-assessment')
-                      ?.scrollIntoView({ behavior: 'smooth' });
-                  }}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-sm"
-                >
-                  <span>Complete &amp; Take Module {mod.id} Quiz</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+                  />
+                </div>
               )}
             </div>
-
-            {/* Assessment appears immediately after the last session within the same module content section */}
-            {selectedUnitIndex === mod.units.length - 1 && (
-              <InlineModuleAssessment
-                moduleId={mod.id}
-                modTitle={mod.title}
-                completedCount={modCompletedCount}
-                totalUnits={mod.units.length}
-                progress={progress}
-                onSaveQuizScore={onSaveQuizScore}
-                onCompleteModuleUnits={() =>
-                  onCompleteModuleUnits(mod.units.map((u) => u.id))
-                }
-                onProceedNextModule={
-                  mod.id < 6 ? () => onSelectModule(mod.id + 1) : undefined
-                }
-              />
-            )}
-          </main>
+          </div>
         </div>
       )}
 
