@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -13,7 +13,8 @@ import {
   Briefcase,
 } from 'lucide-react';
 import { getModuleById } from '../data/courseIndex';
-import { AudienceRole, CourseView, UserProgress } from '../types/course';
+import { CourseView, UserProgress } from '../types/course';
+import { ModuleTab } from '../utils/router';
 import { StatusTag } from './StatusTag';
 import { InlineModuleAssessment } from './InlineModuleAssessment';
 import { DpdpDefinitionsDeck } from './DpdpDefinitionsDeck';
@@ -21,54 +22,42 @@ import { DpdpDefinitionsDeck } from './DpdpDefinitionsDeck';
 interface ModuleReaderProps {
   moduleId: number;
   progress: UserProgress;
+  activeTab: ModuleTab;
+  expandedUnitIndex: number | null;
+  isAssessmentOpen: boolean;
   onSelectModule: (id: number) => void;
-  onSelectUnit: (moduleId: number, unitIndex: number) => void;
+  onSelectUnit: (moduleId: number, unitIndex: number | null) => void;
+  onChangeTab: (moduleId: number, tab: ModuleTab) => void;
+  onToggleAssessment: (moduleId: number, open: boolean) => void;
   onToggleUnitComplete: (unitId: string) => void;
   onCompleteModuleUnits: (unitIds: string[]) => void;
   onSaveQuizScore: (quizId: string, score: number, total: number) => void;
   onToggleChecklistItem: (itemId: string) => void;
-  onSelectRole: (role: AudienceRole) => void;
   onNavigate: (view: CourseView) => void;
 }
-
-type ModuleTab = 'units' | 'cases' | 'checklist';
 
 export function ModuleReader({
   moduleId,
   progress,
+  activeTab,
+  expandedUnitIndex,
+  isAssessmentOpen,
   onSelectModule,
   onSelectUnit,
+  onChangeTab,
+  onToggleAssessment,
   onToggleUnitComplete,
   onCompleteModuleUnits,
   onSaveQuizScore,
   onToggleChecklistItem,
-  onSelectRole,
   onNavigate,
 }: ModuleReaderProps) {
   const mod = getModuleById(moduleId);
-  const [activeTab, setActiveTab] = useState<ModuleTab>('units');
-  const [expandedUnitIndex, setExpandedUnitIndex] = useState<number | null>(
-    () => progress.lastUnitByModule[moduleId] ?? 0
-  );
-  const [isAssessmentOpen, setIsAssessmentOpen] = useState<boolean>(false);
   const [revealedCaseIds, setRevealedCaseIds] = useState<Record<string, boolean>>({});
   const unitRowRefs = useRef<(HTMLDivElement | null)[]>([]);
   const assessmentRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    setActiveTab('units');
-    setIsAssessmentOpen(false);
-  }, [moduleId]);
-
-  useEffect(() => {
-    const savedIdx = progress.lastUnitByModule[moduleId] ?? 0;
-    const bounded = Math.min(Math.max(0, savedIdx), mod.units.length - 1);
-    setExpandedUnitIndex(bounded);
-  }, [moduleId, mod.units.length, progress.lastUnitByModule]);
-
   const openUnitAt = (idx: number) => {
-    setExpandedUnitIndex(idx);
-    setIsAssessmentOpen(false);
     onSelectUnit(moduleId, idx);
     window.setTimeout(() => {
       unitRowRefs.current[idx]?.scrollIntoView({
@@ -80,7 +69,7 @@ export function ModuleReader({
 
   const toggleUnitAccordion = (idx: number) => {
     if (expandedUnitIndex === idx) {
-      setExpandedUnitIndex(null);
+      onSelectUnit(moduleId, null);
     } else {
       openUnitAt(idx);
     }
@@ -96,9 +85,7 @@ export function ModuleReader({
   };
 
   const jumpToEndAssessment = () => {
-    setActiveTab('units');
-    setExpandedUnitIndex(null);
-    setIsAssessmentOpen(true);
+    onToggleAssessment(moduleId, true);
     window.setTimeout(() => {
       assessmentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 60);
@@ -131,10 +118,6 @@ export function ModuleReader({
           <h1 className="font-display text-2xl sm:text-3xl font-semibold text-slate-950 dark:text-white tracking-tight">
             {mod.title}
           </h1>
-
-          <p className="text-sm text-slate-600 dark:text-slate-300 max-w-3xl">
-            {mod.commencementSummary}
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -162,7 +145,7 @@ export function ModuleReader({
         <div className="flex items-center gap-4">
           <button
             type="button"
-            onClick={() => setActiveTab('units')}
+            onClick={() => onChangeTab(mod.id, 'units')}
             className={`text-sm font-medium py-1.5 border-b-2 transition-colors ${
               activeTab === 'units'
                 ? 'border-cyan-700 dark:border-cyan-400 text-slate-950 dark:text-white font-semibold'
@@ -173,7 +156,7 @@ export function ModuleReader({
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('cases')}
+            onClick={() => onChangeTab(mod.id, 'cases')}
             className={`text-sm font-medium py-1.5 border-b-2 transition-colors ${
               activeTab === 'cases'
                 ? 'border-cyan-700 dark:border-cyan-400 text-slate-950 dark:text-white font-semibold'
@@ -185,7 +168,7 @@ export function ModuleReader({
           {mod.checklist && mod.checklist.length > 0 && (
             <button
               type="button"
-              onClick={() => setActiveTab('checklist')}
+              onClick={() => onChangeTab(mod.id, 'checklist')}
               className={`text-sm font-medium py-1.5 border-b-2 transition-colors ${
                 activeTab === 'checklist'
                   ? 'border-cyan-700 dark:border-cyan-400 text-slate-950 dark:text-white font-semibold'
@@ -195,25 +178,6 @@ export function ModuleReader({
               12-Point Checklist
             </button>
           )}
-        </div>
-
-        {/* Inline Role Lens Switcher */}
-        <div className="flex items-center gap-1.5 text-xs">
-          <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400 mr-1">Lens:</span>
-          {(['all', 'frontline', 'it', 'leadership'] as AudienceRole[]).map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => onSelectRole(r)}
-              className={`px-2 py-1 rounded-sm font-mono text-[11px] uppercase tracking-wider transition-colors ${
-                progress.selectedRole === r
-                  ? 'bg-cyan-800 dark:bg-cyan-500 text-white dark:text-slate-950 font-semibold'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-              }`}
-            >
-              {r === 'all' ? 'All' : r === 'it' ? 'IT/Cyber' : r}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -310,9 +274,6 @@ export function ModuleReader({
                     </div>
 
                     <div className="flex items-center gap-3 shrink-0">
-                      <span className="hidden md:inline-flex">
-                        <StatusTag status={unit.status} compact onDarkSurface />
-                      </span>
                       <span className="font-mono text-xs text-slate-300 tabular-nums">
                         {unit.durationMinutes} min
                       </span>
@@ -574,7 +535,7 @@ export function ModuleReader({
               <button
                 type="button"
                 aria-expanded={isAssessmentOpen}
-                onClick={() => setIsAssessmentOpen((prev) => !prev)}
+                onClick={() => onToggleAssessment(mod.id, !isAssessmentOpen)}
                 className={`w-full text-left px-4 sm:px-5 py-3.5 flex items-center justify-between gap-4 transition-colors ${
                   isAssessmentOpen
                     ? 'bg-[#113C54]'

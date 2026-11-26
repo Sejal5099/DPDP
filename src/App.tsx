@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { COURSE_MODULES } from './data/courseIndex';
 import { AudienceRole, CourseView, UserProgress } from './types/course';
 import { Header } from './components/Header';
-import { Footer } from './components/Footer';
 import { DashboardView } from './components/DashboardView';
 import { OverviewView } from './components/OverviewView';
 import { ModuleReader } from './components/ModuleReader';
@@ -13,6 +12,12 @@ import {
   InteractiveBackdrop,
   ThemeMode,
 } from './components/InteractiveBackdrop';
+import {
+  buildAppPath,
+  ModuleTab,
+  navigateHistory,
+  parseRoute,
+} from './utils/router';
 
 const STORAGE_KEY = 'dpdp_bfsi_academy_progress_v1';
 const BACKDROP_KEY = 'dpdp_bfsi_backdrop_v1';
@@ -65,8 +70,37 @@ function loadInitialProgress(): UserProgress {
 }
 
 export default function App() {
-  const [activeView, setActiveView] = useState<CourseView>('dashboard');
-  const [progress, setProgress] = useState<UserProgress>(() => loadInitialProgress());
+  const [initialRoute] = useState(() => parseRoute(window.location.pathname));
+
+  const [activeView, setActiveView] = useState<CourseView>(initialRoute.view);
+  const [moduleTab, setModuleTab] = useState<ModuleTab>(
+    initialRoute.tab ?? 'units'
+  );
+  const [expandedUnitIndex, setExpandedUnitIndex] = useState<number | null>(
+    initialRoute.unitIndex !== undefined ? initialRoute.unitIndex : null
+  );
+  const [isAssessmentOpen, setIsAssessmentOpen] = useState<boolean>(
+    initialRoute.assessmentOpen ?? false
+  );
+
+  const [progress, setProgress] = useState<UserProgress>(() => {
+    const base = loadInitialProgress();
+    if (initialRoute.view === 'module' && initialRoute.moduleId) {
+      return {
+        ...base,
+        activeModuleId: initialRoute.moduleId,
+        lastUnitByModule:
+          typeof initialRoute.unitIndex === 'number'
+            ? {
+                ...base.lastUnitByModule,
+                [initialRoute.moduleId]: initialRoute.unitIndex,
+              }
+            : base.lastUnitByModule,
+      };
+    }
+    return base;
+  });
+
   const [theme, setTheme] = useState<ThemeMode>(() => {
     try {
       const saved = window.localStorage.getItem(THEME_KEY);
@@ -78,7 +112,7 @@ export default function App() {
     }
     return 'dark';
   });
-  const [palette, setPalette] = useState<BackdropPalette>(() => {
+  const [palette] = useState<BackdropPalette>(() => {
     try {
       const saved = window.localStorage.getItem(BACKDROP_KEY);
       if (saved === 'ocean' || saved === 'sunset' || saved === 'aurora') {
@@ -89,6 +123,47 @@ export default function App() {
     }
     return 'aurora';
   });
+
+  useEffect(() => {
+    if (!initialRoute.isCanonical) {
+      navigateHistory(
+        buildAppPath({
+          view: initialRoute.view,
+          moduleId: initialRoute.moduleId,
+          tab: initialRoute.tab,
+          unitIndex: initialRoute.unitIndex,
+          assessmentOpen: initialRoute.assessmentOpen,
+        }),
+        true
+      );
+    }
+  }, [initialRoute]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const next = parseRoute(window.location.pathname);
+      setActiveView(next.view);
+      if (next.view === 'module' && next.moduleId) {
+        const modId = next.moduleId;
+        setModuleTab(next.tab ?? 'units');
+        setExpandedUnitIndex(
+          next.unitIndex !== undefined ? next.unitIndex : null
+        );
+        setIsAssessmentOpen(next.assessmentOpen ?? false);
+        setProgress((prev) => ({
+          ...prev,
+          activeModuleId: modId,
+          lastUnitByModule:
+            typeof next.unitIndex === 'number'
+              ? { ...prev.lastUnitByModule, [modId]: next.unitIndex }
+              : prev.lastUnitByModule,
+        }));
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -112,40 +187,104 @@ export default function App() {
     }
   }, [progress]);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(BACKDROP_KEY, palette);
-    } catch {
-      // Ignore
-    }
-  }, [palette]);
-
   const navigateTo = (view: CourseView) => {
     setActiveView(view);
+    if (view === 'module') {
+      navigateHistory(
+        buildAppPath({
+          view: 'module',
+          moduleId: progress.activeModuleId,
+          tab: moduleTab,
+          unitIndex: expandedUnitIndex,
+          assessmentOpen: isAssessmentOpen,
+        })
+      );
+    } else {
+      navigateHistory(buildAppPath({ view }));
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSelectModule = (moduleId: number, unitIndex?: number) => {
+    const targetIdx =
+      typeof unitIndex === 'number'
+        ? unitIndex
+        : (progress.lastUnitByModule[moduleId] ?? 0);
+
     setProgress((prev) => ({
       ...prev,
       activeModuleId: moduleId,
-      lastUnitByModule:
-        typeof unitIndex === 'number'
-          ? { ...prev.lastUnitByModule, [moduleId]: unitIndex }
-          : prev.lastUnitByModule,
+      lastUnitByModule: {
+        ...prev.lastUnitByModule,
+        [moduleId]: targetIdx,
+      },
     }));
     setActiveView('module');
+    setModuleTab('units');
+    setExpandedUnitIndex(targetIdx);
+    setIsAssessmentOpen(false);
+    navigateHistory(
+      buildAppPath({
+        view: 'module',
+        moduleId,
+        tab: 'units',
+        unitIndex: targetIdx,
+        assessmentOpen: false,
+      })
+    );
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSelectUnit = (moduleId: number, unitIndex: number) => {
-    setProgress((prev) => ({
-      ...prev,
-      lastUnitByModule: {
-        ...prev.lastUnitByModule,
-        [moduleId]: unitIndex,
-      },
-    }));
+  const handleSelectUnit = (moduleId: number, unitIndex: number | null) => {
+    setModuleTab('units');
+    setExpandedUnitIndex(unitIndex);
+    setIsAssessmentOpen(false);
+    if (typeof unitIndex === 'number') {
+      setProgress((prev) => ({
+        ...prev,
+        lastUnitByModule: {
+          ...prev.lastUnitByModule,
+          [moduleId]: unitIndex,
+        },
+      }));
+    }
+    navigateHistory(
+      buildAppPath({
+        view: 'module',
+        moduleId,
+        tab: 'units',
+        unitIndex,
+        assessmentOpen: false,
+      })
+    );
+  };
+
+  const handleChangeModuleTab = (moduleId: number, tab: ModuleTab) => {
+    setModuleTab(tab);
+    navigateHistory(
+      buildAppPath({
+        view: 'module',
+        moduleId,
+        tab,
+        unitIndex: expandedUnitIndex,
+        assessmentOpen: isAssessmentOpen,
+      })
+    );
+  };
+
+  const handleToggleAssessment = (moduleId: number, open: boolean) => {
+    setModuleTab('units');
+    setExpandedUnitIndex(null);
+    setIsAssessmentOpen(open);
+    navigateHistory(
+      buildAppPath({
+        view: 'module',
+        moduleId,
+        tab: 'units',
+        unitIndex: null,
+        assessmentOpen: open,
+      })
+    );
   };
 
   const handleToggleUnitComplete = (unitId: string) => {
@@ -242,7 +381,6 @@ export default function App() {
             <DashboardView
               progress={progress}
               onSelectModule={handleSelectModule}
-              onToggleUnitComplete={handleToggleUnitComplete}
               onNavigate={navigateTo}
               onResetProgress={handleResetProgress}
             />
@@ -261,13 +399,17 @@ export default function App() {
             <ModuleReader
               moduleId={progress.activeModuleId}
               progress={progress}
+              activeTab={moduleTab}
+              expandedUnitIndex={expandedUnitIndex}
+              isAssessmentOpen={isAssessmentOpen}
               onSelectModule={handleSelectModule}
               onSelectUnit={handleSelectUnit}
+              onChangeTab={handleChangeModuleTab}
+              onToggleAssessment={handleToggleAssessment}
               onToggleUnitComplete={handleToggleUnitComplete}
               onCompleteModuleUnits={handleCompleteModuleUnits}
               onSaveQuizScore={handleSaveQuizScore}
               onToggleChecklistItem={handleToggleChecklistItem}
-              onSelectRole={handleSelectRole}
               onNavigate={navigateTo}
             />
           )}
@@ -276,8 +418,6 @@ export default function App() {
 
           {activeView === 'reference' && <LegalReferenceView />}
         </div>
-
-        <Footer palette={palette} onChangePalette={setPalette} />
       </div>
     </div>
   );

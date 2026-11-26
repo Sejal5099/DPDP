@@ -2,10 +2,6 @@ import { useMemo, useState } from 'react';
 import {
   ArrowRight,
   BookOpen,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Circle,
   Clock,
   FlaskConical,
   RotateCcw,
@@ -18,7 +14,6 @@ import { CourseView, UserProgress } from '../types/course';
 interface DashboardViewProps {
   progress: UserProgress;
   onSelectModule: (moduleId: number, unitIndex?: number) => void;
-  onToggleUnitComplete: (unitId: string) => void;
   onNavigate: (view: CourseView) => void;
   onResetProgress: () => void;
 }
@@ -34,15 +29,11 @@ function formatMinutesToHours(totalMins: number): string {
 export function DashboardView({
   progress,
   onSelectModule,
-  onToggleUnitComplete,
   onNavigate,
   onResetProgress,
 }: DashboardViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<ModuleFilterStatus>('all');
-  const [expandedModuleId, setExpandedModuleId] = useState<number | null>(
-    progress.activeModuleId
-  );
   const [confirmReset, setConfirmReset] = useState(false);
 
   const metrics = useMemo(() => {
@@ -241,7 +232,7 @@ export function DashboardView({
               Six-Module Segmented Completion Map
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              Click any module segment to inspect units inline or jump straight to your next uncompleted session.
+              Click any module segment to jump straight to your next uncompleted session.
             </p>
           </div>
           <span className="font-mono text-sm font-medium text-slate-600 dark:text-slate-300 tabular-nums shrink-0">
@@ -255,7 +246,8 @@ export function DashboardView({
               progress.completedUnitIds.includes(u.id)
             ).length;
             const pct = Math.round((done / mod.units.length) * 100);
-            const isExpanded = expandedModuleId === mod.id;
+            const resumeIdx = progress.lastUnitByModule[mod.id] ?? 0;
+            const isActive = progress.activeModuleId === mod.id;
             const accentMap: Record<
               number,
               { code: string; bar: string; active: string; top: string }
@@ -303,11 +295,9 @@ export function DashboardView({
               <button
                 key={mod.id}
                 type="button"
-                onClick={() =>
-                  setExpandedModuleId(isExpanded ? null : mod.id)
-                }
+                onClick={() => onSelectModule(mod.id, resumeIdx)}
                 className={`text-left p-4 sm:p-5 rounded-sm border border-t-2 transition-colors ${accent.top} ${
-                  isExpanded
+                  isActive
                     ? accent.active
                     : 'border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 hover:border-slate-400 dark:hover:border-slate-600'
                 }`}
@@ -351,10 +341,10 @@ export function DashboardView({
         <div className="p-5 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1">
             <h2 className="font-display text-xl sm:text-2xl font-semibold text-slate-950 dark:text-white">
-              Module Progress &amp; Quick Unit Tracker
+              Module Progress
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              Filter modules by status, expand rows to check off completed units, or resume reading.
+              Filter modules by status or resume reading.
             </p>
           </div>
 
@@ -436,36 +426,15 @@ export function DashboardView({
                 status,
                 resumeIdx,
               }) => {
-                const isExpanded = expandedModuleId === mod.id;
                 return (
                   <div key={mod.id}>
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-4 px-5 sm:px-6 py-4 items-center hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                      <div className="md:col-span-4 flex items-start gap-3 min-w-0">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedModuleId(isExpanded ? null : mod.id)
-                          }
-                          className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-700 rounded-sm mt-0.5 shrink-0"
-                          aria-label={
-                            isExpanded
-                              ? `Collapse Module ${mod.id} units`
-                              : `Expand Module ${mod.id} units`
-                          }
-                        >
-                          {isExpanded ? (
-                            <ChevronUp className="w-4 h-4" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4" />
-                          )}
-                        </button>
-                        <div className="min-w-0">
-                          <div className="font-mono text-xs sm:text-sm text-cyan-800 dark:text-cyan-400 font-semibold">
-                            Module {mod.id}
-                          </div>
-                          <div className="text-base font-semibold text-slate-900 dark:text-slate-100 leading-snug mt-0.5">
-                            {mod.title}
-                          </div>
+                      <div className="md:col-span-4 min-w-0">
+                        <div className="font-mono text-xs sm:text-sm text-cyan-800 dark:text-cyan-400 font-semibold">
+                          Module {mod.id}
+                        </div>
+                        <div className="text-base font-semibold text-slate-900 dark:text-slate-100 leading-snug mt-0.5">
+                          {mod.title}
                         </div>
                       </div>
 
@@ -538,68 +507,6 @@ export function DashboardView({
                         </button>
                       </div>
                     </div>
-
-                    {/* Expanded Inline Unit Checklist Drawer */}
-                    {isExpanded && (
-                      <div className="bg-slate-50/80 dark:bg-slate-950/60 border-t border-slate-200 dark:border-slate-800 px-5 sm:px-6 py-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                          {mod.units.map((unit, uIdx) => {
-                            const done = progress.completedUnitIds.includes(unit.id);
-                            return (
-                              <div
-                                key={unit.id}
-                                className={`flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-sm border bg-white dark:bg-slate-900 ${
-                                  done
-                                    ? 'border-emerald-300 dark:border-emerald-800'
-                                    : 'border-slate-200 dark:border-slate-800'
-                                }`}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => onToggleUnitComplete(unit.id)}
-                                  className="flex items-start gap-2.5 text-left min-w-0 flex-1"
-                                  title={
-                                    done
-                                      ? `Mark ${unit.code} incomplete`
-                                      : `Mark ${unit.code} complete`
-                                  }
-                                >
-                                  <span className="mt-0.5 shrink-0">
-                                    {done ? (
-                                      <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
-                                    ) : (
-                                      <Circle className="w-4 h-4 text-slate-300 dark:text-slate-600 hover:text-cyan-800 dark:hover:text-cyan-400" />
-                                    )}
-                                  </span>
-                                  <span className="min-w-0">
-                                    <span className="block font-mono text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                                      {unit.code} · {unit.durationMinutes}m
-                                    </span>
-                                    <span
-                                      className={`block text-sm leading-snug mt-0.5 ${
-                                        done
-                                          ? 'text-slate-500 dark:text-slate-500 line-through'
-                                          : 'text-slate-900 dark:text-slate-100 font-medium'
-                                      }`}
-                                    >
-                                      {unit.title}
-                                    </span>
-                                  </span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => onSelectModule(mod.id, uIdx)}
-                                  className="font-mono text-xs font-semibold text-cyan-800 dark:text-cyan-400 hover:text-cyan-950 dark:hover:text-cyan-300 shrink-0 px-2 py-1"
-                                >
-                                  Open
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               }

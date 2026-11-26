@@ -31,6 +31,12 @@ export default defineConfig(() => {
               force: true
             });
           }
+
+          const indexHtml = path.join(distDir, 'index.html');
+          const notFoundHtml = path.join(distDir, '404.html');
+          if (fs.existsSync(indexHtml)) {
+            fs.copyFileSync(indexHtml, notFoundHtml);
+          }
         },
       },
     ],
