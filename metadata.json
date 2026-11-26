@@ -1,0 +1,6 @@
+{
+  "name": "DPDP BFSI Compliance Academy",
+  "description": "Interactive 6-module training portal covering India's Digital Personal Data Protection Act, 2023 and DPDP Rules, 2025 across Banking, Financial Services, and Insurance (BFSI) operations, Consent Engineering, Retention & Erasure, Children & Vulnerable Customers, Third-Party Risk & Security Safeguards, and Significant Data Fiduciary Governance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
